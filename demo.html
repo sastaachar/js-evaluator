@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JS Evaluator — Demo Host</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #58a6ff;
+    }
+
+    .status {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #1f2937;
+      color: #6b7280;
+    }
+
+    .status.ready {
+      background: #064e3b;
+      color: #34d399;
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .panel-header {
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8b949e;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .editor-panel {
+      border-right: 1px solid #21262d;
+    }
+
+    textarea {
+      flex: 1;
+      background: #161b22;
+      color: #c9d1d9;
+      border: none;
+      padding: 16px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      tab-size: 2;
+    }
+
+    textarea::placeholder { color: #484f58; }
+
+    .actions {
+      padding: 12px 16px;
+      border-top: 1px solid #21262d;
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover { background: #30363d; }
+
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    button.primary:hover { background: #2ea043; }
+
+    #output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .log-entry {
+      padding: 4px 16px;
+      border-bottom: 1px solid #161b22;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log-entry.warn { color: #d29922; background: rgba(210, 153, 34, 0.05); }
+    .log-entry.error { color: #f85149; background: rgba(248, 81, 73, 0.05); }
+    .log-entry.info { color: #58a6ff; }
+    .log-entry.debug { color: #8b949e; }
+    .log-entry.result { color: #7ee787; border-left: 3px solid #238636; }
+    .log-entry.system { color: #6e7681; font-style: italic; }
+    .log-entry.exec-error { color: #f85149; border-left: 3px solid #da3633; }
+
+    .log-entry .timestamp {
+      color: #484f58;
+      margin-right: 8px;
+      font-size: 11px;
+    }
+
+    iframe { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>JS Evaluator</h1>
+    <span class="status" id="status">Connecting…</span>
+  </header>
+
+  <main>
+    <div class="panel editor-panel">
+      <div class="panel-header">Code</div>
+      <textarea id="code" placeholder="Write JavaScript here…" spellcheck="false">console.log("Hello from the evaluator!");
+
+const nums = [1, 2, 3, 4, 5];
+console.log("Sum:", nums.reduce((a, b) => a + b, 0));
+
+console.warn("This is a warning");
+console.error("This is an error");
+
+return { status: "done", items: nums.length };</textarea>
+      <div class="actions">
+        <button class="primary" id="run-btn">Run ▶</button>
+        <button id="clear-btn">Clear Output</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span>Output</span>
+        <span id="entry-count"></span>
+      </div>
+      <div id="output"></div>
+    </div>
+  </main>
+
+  <iframe id="sandbox" sandbox="allow-scripts" src="index.html"></iframe>
+
+  <script>
+    const sandbox = document.getElementById("sandbox");
+    const output = document.getElementById("output");
+    const codeEl = document.getElementById("code");
+    const statusEl = document.getElementById("status");
+    const runBtn = document.getElementById("run-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const entryCount = document.getElementById("entry-count");
+
+    let entries = 0;
+
+    function ts(timestamp) {
+      return new Date(timestamp).toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        fractionalSecondDigits: 3,
+      });
+    }
+
+    function appendEntry(className, text, timestamp) {
+      const div = document.createElement("div");
+      div.className = "log-entry " + className;
+      const time = document.createElement("span");
+      time.className = "timestamp";
+      time.textContent = ts(timestamp);
+      div.appendChild(time);
+      div.appendChild(document.createTextNode(text));
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+      entries++;
+      entryCount.textContent = entries + " entries";
+    }
+
+    function formatArgs(args) {
+      return args.map(a => a.value).join(" ");
+    }
+
+    window.addEventListener("message", function (event) {
+      const msg = event.data;
+      if (!msg || typeof msg !== "object") return;
+
+      switch (msg.type) {
+        case "ready":
+          statusEl.textContent = "Ready";
+          statusEl.classList.add("ready");
+          break;
+
+        case "console":
+          if (msg.level === "clear") {
+            output.innerHTML = "";
+            entries = 0;
+            entryCount.textContent = "";
+          } else {
+            appendEntry(msg.level, formatArgs(msg.args), msg.timestamp);
+          }
+          break;
+
+        case "execution-start":
+          appendEntry("system", "— Execution started —", msg.timestamp);
+          break;
+
+        case "execution-result":
+          if (msg.result && msg.result.type !== "undefined") {
+            appendEntry("result", "↪ " + msg.result.value, msg.timestamp);
+          }
+          break;
+
+        case "execution-error":
+          appendEntry("exec-error", msg.error.name + ": " + msg.error.message, msg.timestamp);
+          break;
+
+        case "execution-end":
+          appendEntry("system", "— Execution finished —", msg.timestamp);
+          break;
+
+        case "runtime-error":
+          appendEntry("exec-error", msg.error.message, msg.timestamp);
+          break;
+      }
+    });
+
+    runBtn.addEventListener("click", function () {
+      sandbox.contentWindow.postMessage(
+        { type: "execute", code: codeEl.value },
+        "*"
+      );
+    });
+
+    clearBtn.addEventListener("click", function () {
+      output.innerHTML = "";
+      entries = 0;
+      entryCount.textContent = "";
+    });
+
+    codeEl.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        runBtn.click();
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const start = this.selectionStart;
+        const end = this.selectionEnd;
+        this.value = this.value.substring(0, start) + "  " + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 2;
+      }
+    });
+  </script>
+</body>
+</html>

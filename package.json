@@ -1,0 +1,13 @@
+{
+  "name": "js-evaluator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "evaluator.js",
+  "scripts": {
+    "start": "npx serve .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
