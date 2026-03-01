@@ -43,6 +43,23 @@
       color: #34d399;
     }
 
+    .spacer { flex: 1; }
+
+    .mode-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #1c2129;
+      color: #8b949e;
+      border: 1px solid #30363d;
+    }
+
+    .mode-badge.module {
+      background: #1a1b3a;
+      color: #a78bfa;
+      border-color: #4c3a8a;
+    }
+
     main {
       flex: 1;
       display: grid;
@@ -94,6 +111,7 @@
       border-top: 1px solid #21262d;
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     button {
@@ -117,6 +135,16 @@
     }
 
     button.primary:hover { background: #2ea043; }
+
+    select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 13px;
+      cursor: pointer;
+    }
 
     #output {
       flex: 1;
@@ -155,11 +183,23 @@
   <header>
     <h1>JS Evaluator</h1>
     <span class="status" id="status">Connecting…</span>
+    <span class="spacer"></span>
+    <span class="mode-badge" id="mode-badge">Script</span>
   </header>
 
   <main>
     <div class="panel editor-panel">
-      <div class="panel-header">Code</div>
+      <div class="panel-header">
+        <span>Code</span>
+        <select id="examples">
+          <option value="">Examples…</option>
+          <option value="basic">Basic console</option>
+          <option value="module-cdn">Import from CDN</option>
+          <option value="module-importmap">Import map</option>
+          <option value="top-level-await">Top-level await</option>
+          <option value="ts-rest-sdk">ThoughtSpot REST SDK</option>
+        </select>
+      </div>
       <textarea id="code" placeholder="Write JavaScript here…" spellcheck="false">console.log("Hello from the evaluator!");
 
 const nums = [1, 2, 3, 4, 5];
@@ -184,7 +224,7 @@ return { status: "done", items: nums.length };</textarea>
     </div>
   </main>
 
-  <iframe id="sandbox" sandbox="allow-scripts" src="index.html"></iframe>
+  <iframe id="sandbox" sandbox="allow-scripts allow-same-origin" src="index.html"></iframe>
 
   <script>
     const sandbox = document.getElementById("sandbox");
@@ -194,8 +234,101 @@ return { status: "done", items: nums.length };</textarea>
     const runBtn = document.getElementById("run-btn");
     const clearBtn = document.getElementById("clear-btn");
     const entryCount = document.getElementById("entry-count");
+    const modeBadge = document.getElementById("mode-badge");
+    const examplesEl = document.getElementById("examples");
 
     let entries = 0;
+
+    const EXAMPLES = {
+      basic:
+`console.log("Hello from the evaluator!");
+
+const nums = [1, 2, 3, 4, 5];
+console.log("Sum:", nums.reduce((a, b) => a + b, 0));
+
+console.warn("This is a warning");
+console.error("This is an error");
+
+return { status: "done", items: nums.length };`,
+
+      "module-cdn":
+`import confetti from "https://esm.sh/canvas-confetti";
+
+console.log("Firing confetti!");
+confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+
+console.log("Done!");`,
+
+      "module-importmap":
+`// First, the host sends a set-importmap message (done automatically here).
+// Then you can use bare specifiers like "lodash-es":
+
+import { chunk, shuffle, capitalize } from "lodash-es";
+
+const words = ["hello", "world", "from", "evaluator"];
+console.log("Capitalized:", words.map(capitalize));
+console.log("Shuffled:", shuffle(words));
+console.log("Chunked:", chunk([1, 2, 3, 4, 5, 6], 2));`,
+
+      "top-level-await":
+`const resp = await fetch("https://jsonplaceholder.typicode.com/todos/1");
+const todo = await resp.json();
+console.log("Fetched todo:", todo);
+
+const resp2 = await fetch("https://jsonplaceholder.typicode.com/users/1");
+const user = await resp2.json();
+console.log("User:", user.name, "-", user.email);`,
+
+      "ts-rest-sdk":
+`import { createConfiguration, ThoughtSpotRestApi } from "https://esm.sh/@thoughtspot/rest-api-sdk";
+
+const config = createConfiguration({
+  baseServer: { url: "https://my-ts-instance.thoughtspot.cloud" },
+});
+
+console.log("Config created:", config);
+console.log("ThoughtSpotRestApi:", typeof ThoughtSpotRestApi);
+
+const client = new ThoughtSpotRestApi(config);
+console.log("Client methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(client)).filter(m => m !== "constructor").slice(0, 10));`
+    };
+
+    const IMPORTMAPS = {
+      "module-importmap": {
+        imports: {
+          "lodash-es": "https://esm.sh/lodash-es",
+          "lodash-es/": "https://esm.sh/lodash-es/"
+        }
+      }
+    };
+
+    const MODULE_PATTERN =
+      /(^|\n)\s*(import\s+[\w{*]|import\s*\(|import\s+["']|export\s+[\w{*]|export\s+default)/;
+
+    function detectMode(code) {
+      const stripped = code
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "")
+        .replace(/(["'`])(?:(?!\1|\\).|\\.)*\1/g, '""');
+      return MODULE_PATTERN.test(stripped) ? "module" : "script";
+    }
+
+    function updateModeBadge() {
+      const mode = detectMode(codeEl.value);
+      modeBadge.textContent = mode === "module" ? "Module" : "Script";
+      modeBadge.className = "mode-badge" + (mode === "module" ? " module" : "");
+    }
+
+    codeEl.addEventListener("input", updateModeBadge);
+
+    examplesEl.addEventListener("change", function () {
+      const key = this.value;
+      if (key && EXAMPLES[key]) {
+        codeEl.value = EXAMPLES[key];
+        updateModeBadge();
+      }
+      this.value = "";
+    });
 
     function ts(timestamp) {
       return new Date(timestamp).toLocaleTimeString("en-US", {
@@ -266,10 +399,24 @@ return { status: "done", items: nums.length };</textarea>
         case "runtime-error":
           appendEntry("exec-error", msg.error.message, msg.timestamp);
           break;
+
+        case "importmap-set":
+          appendEntry("system", "— Import map configured —", msg.timestamp);
+          break;
       }
     });
 
+    function sendImportMapIfNeeded() {
+      for (const [key, map] of Object.entries(IMPORTMAPS)) {
+        if (codeEl.value === EXAMPLES[key]) {
+          sandbox.contentWindow.postMessage({ type: "set-importmap", map }, "*");
+          return;
+        }
+      }
+    }
+
     runBtn.addEventListener("click", function () {
+      sendImportMapIfNeeded();
       sandbox.contentWindow.postMessage(
         { type: "execute", code: codeEl.value },
         "*"
