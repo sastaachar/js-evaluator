@@ -95,6 +95,8 @@
       timestamp: Date.now(),
     });
 
+    originalConsole.log("[evaluator] classic exec:\n", code);
+
     try {
       const result = new Function(code)();
       postToHost({
@@ -177,6 +179,8 @@
     window[cbName] = () => settle(null);
 
     const wrapped = `${code}\nwindow["${cbName}"]?.();\n`;
+
+    originalConsole.log("[evaluator] module exec:\n", wrapped);
 
     const script = document.createElement("script");
     script.type = "module";
