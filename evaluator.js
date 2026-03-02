@@ -83,6 +83,18 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Override fetch to strip credentials mode (avoids CORS issues with SDKs
+  // that hardcode credentials: "include")
+  // ---------------------------------------------------------------------------
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (url, opts = {}) {
+    const cleaned = Object.assign({}, opts);
+    delete cleaned.credentials;
+    return originalFetch(url, cleaned);
+  };
+
+  // ---------------------------------------------------------------------------
   // Classic execution (new Function) — no import/export support
   // ---------------------------------------------------------------------------
 
