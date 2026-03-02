@@ -10,6 +10,7 @@
 
   let executionId = null;
   let pendingModuleSettle = null;
+  let pendingDoneSignal = null;
 
   function serialize(value) {
     if (value === undefined) return { type: "undefined", value: "undefined" };
@@ -53,6 +54,12 @@
 
   console.log = function (...args) {
     originalConsole.log(...args);
+    if (pendingDoneSignal && args.length === 1 && args[0] === "[DONE]") {
+      const signal = pendingDoneSignal;
+      pendingDoneSignal = null;
+      signal();
+      return;
+    }
     emitLog("log", args);
   };
   console.warn = function (...args) {
@@ -98,12 +105,17 @@
   // Classic execution (new Function) — no import/export support
   // ---------------------------------------------------------------------------
 
-  function execute(code, id) {
+  function endExecution(execId) {
+    postToHost({ type: "execution-end", executionId: execId, timestamp: Date.now() });
+  }
+
+  function execute(code, id, waitForSignal) {
     executionId = id || crypto.randomUUID();
+    const currentExecId = executionId;
 
     postToHost({
       type: "execution-start",
-      executionId,
+      executionId: currentExecId,
       timestamp: Date.now(),
     });
 
@@ -113,35 +125,33 @@
       const result = new Function(code)();
       postToHost({
         type: "execution-result",
-        executionId,
+        executionId: currentExecId,
         result: serialize(result),
         timestamp: Date.now(),
       });
     } catch (err) {
       postToHost({
         type: "execution-error",
-        executionId,
-        error: {
-          message: err.message,
-          stack: err.stack,
-          name: err.name,
-        },
+        executionId: currentExecId,
+        error: { message: err.message, stack: err.stack, name: err.name },
         timestamp: Date.now(),
       });
+      endExecution(currentExecId);
+      return;
     }
 
-    postToHost({
-      type: "execution-end",
-      executionId,
-      timestamp: Date.now(),
-    });
+    if (waitForSignal) {
+      pendingDoneSignal = () => endExecution(currentExecId);
+    } else {
+      endExecution(currentExecId);
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Module execution (<script type="module">) — supports import/export
   // ---------------------------------------------------------------------------
 
-  function executeModule(code, id) {
+  function executeModule(code, id, waitForSignal) {
     executionId = id || crypto.randomUUID();
     const currentExecId = executionId;
 
@@ -171,20 +181,22 @@
           },
           timestamp: Date.now(),
         });
-      } else {
-        postToHost({
-          type: "execution-result",
-          executionId: currentExecId,
-          result: serialize(undefined),
-          timestamp: Date.now(),
-        });
+        endExecution(currentExecId);
+        return;
       }
 
       postToHost({
-        type: "execution-end",
+        type: "execution-result",
         executionId: currentExecId,
+        result: serialize(undefined),
         timestamp: Date.now(),
       });
+
+      if (waitForSignal) {
+        pendingDoneSignal = () => endExecution(currentExecId);
+      } else {
+        endExecution(currentExecId);
+      }
     }
 
     pendingModuleSettle = settle;
@@ -252,13 +264,14 @@
     switch (data.type) {
       case "execute":
         if (typeof data.code === "string") {
+          const waitForSignal = data.done === "signal";
           const useModule =
             data.module === true ||
             (data.module !== false && hasModuleSyntax(data.code));
           if (useModule) {
-            executeModule(data.code, data.id);
+            executeModule(data.code, data.id, waitForSignal);
           } else {
-            execute(data.code, data.id);
+            execute(data.code, data.id, waitForSignal);
           }
         }
         break;

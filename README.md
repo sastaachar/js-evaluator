@@ -147,6 +147,7 @@ Runs the provided JavaScript code string inside the sandbox.
 | `code`   | `string`  | Yes      | The JavaScript source code to run.                                   |
 | `id`     | `string`  | No       | A custom execution ID. If omitted, a UUID is generated automatically.|
 | `module` | `boolean` | No       | Force module (`true`) or classic (`false`) mode. Auto-detected if omitted. |
+| `done`   | `string`  | No       | `"auto"` (default) — end when code finishes. `"signal"` — end only when the code calls `console.log("[DONE]")`. See [Completion Modes](#completion-modes). |
 
 ### `set-importmap`
 
@@ -227,7 +228,7 @@ Emitted when the code throws an error.
 
 ### `execution-end`
 
-Emitted after the code has finished, regardless of success or failure.
+Emitted after the code has finished, regardless of success or failure. In `done: "signal"` mode, this is deferred until the code calls `console.log("[DONE]")`.
 
 | Field         | Type     | Description               |
 | ------------- | -------- | ------------------------- |
@@ -271,9 +272,46 @@ Response to a `ping` message.
 | Classic | No module syntax detected, or `module: false` | `new Function(code)()`          | Not supported        | Supported      | Not supported      |
 | Module  | `import`/`export` detected, or `module: true` | `<script type="module">`        | Supported            | Not supported  | Supported          |
 
+## Completion Modes
+
+The `done` field on the `execute` message controls when the evaluator emits `execution-end`.
+
+### `done: "auto"` (default)
+
+Execution ends immediately after the synchronous code finishes. Any async work (fetches, timers, etc.) continues running but `execution-end` will have already been emitted.
+
+```js
+sandbox.contentWindow.postMessage({
+  type: "execute",
+  code: "console.log('instant')"
+}, "*");
+```
+
+### `done: "signal"`
+
+Execution stays open until the code explicitly calls `console.log("[DONE]")`. The `[DONE]` marker is intercepted by the evaluator and **not** forwarded to the host as a console message. This is useful for async code that needs to signal when all work is complete.
+
+```js
+sandbox.contentWindow.postMessage({
+  type: "execute",
+  done: "signal",
+  code: `
+    const resp = await fetch("https://jsonplaceholder.typicode.com/todos/1");
+    const todo = await resp.json();
+    console.log("Fetched:", todo);
+    console.log("[DONE]");
+  `,
+  module: true
+}, "*");
+```
+
+If the code throws a synchronous error or a module fails to load, `execution-end` is emitted immediately regardless of mode — since the code crashed, `[DONE]` would never fire.
+
 ## Execution Lifecycle
 
 Every code execution follows this message sequence:
+
+### Auto mode (`done: "auto"` or omitted)
 
 ```
 Host  →  { type: "execute", code: "..." }
@@ -286,6 +324,20 @@ Eval  ←  { type: "execution-end" }
 // Later, from async code:
 Eval  ←  { type: "console", ... }                    // async logs
 Eval  ←  { type: "runtime-error", ... }              // uncaught async errors
+```
+
+### Signal mode (`done: "signal"`)
+
+```
+Host  →  { type: "execute", code: "...", done: "signal" }
+
+Eval  ←  { type: "execution-start" }
+Eval  ←  { type: "console", level: "log", ... }     // 0..N console messages
+Eval  ←  { type: "execution-result" }                // return value (sync)
+Eval  ←  { type: "console", ... }                    // async logs continue
+         ...                                          // execution stays open
+         // code calls console.log("[DONE]")
+Eval  ←  { type: "execution-end" }                   // now it ends
 ```
 
 ## Serialization
