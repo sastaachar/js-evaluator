@@ -1,428 +1,64 @@
-# JS Evaluator
+# js-evaluator
 
-A lightweight, sandboxed JavaScript execution environment that communicates via `postMessage`. Embed it in an iframe to run arbitrary code and stream console output back to your host page.
+Run JavaScript inside a sandboxed iframe and stream the console output, return
+value and errors back to the host page.
 
-Supports both classic scripts and **ES modules** — use `import` / `export` with CDN packages or configure an import map for bare specifiers.
+This repo holds two things that ship to different places:
 
-## Quick Start
+| Path                    | What it is                                | Where it goes                                        |
+| ----------------------- | ----------------------------------------- | ---------------------------------------------------- |
+| `packages/js-evaluator/` | The npm package — a class and a React hook | [npm](https://www.npmjs.com/package/js-evaluator)     |
+| `docs/`                 | The demo site and the sandbox page it loads | [GitHub Pages](https://sastaachar.github.io/js-evaluator/) |
 
-### 1. Embed the evaluator in a sandboxed iframe
+Only the package is published to npm. The site is never packaged.
 
-```html
-<iframe
-  id="sandbox"
-  sandbox="allow-scripts allow-same-origin"
-  src="https://your-domain.com/index.html"
-  style="display: none;"
-></iframe>
-```
-
-### 2. Wait for the `ready` event
-
-```js
-window.addEventListener("message", (event) => {
-  if (event.data.type === "ready") {
-    console.log("Evaluator is ready");
-  }
-});
-```
-
-### 3. Send code to execute
-
-```js
-const sandbox = document.getElementById("sandbox");
-
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  code: "console.log('Hello!')",
-  id: "optional-execution-id"
-}, "*");
-```
-
-### 4. Listen for results
-
-```js
-window.addEventListener("message", (event) => {
-  const msg = event.data;
-  if (!msg || typeof msg !== "object") return;
-
-  switch (msg.type) {
-    case "console":
-      console.log(`[${msg.level}]`, msg.args.map(a => a.value).join(" "));
-      break;
-    case "execution-result":
-      console.log("Return value:", msg.result.value);
-      break;
-    case "execution-error":
-      console.error("Error:", msg.error.message);
-      break;
-  }
-});
-```
-
-## Using Packages (ES Modules)
-
-The evaluator auto-detects `import` / `export` syntax and switches to module execution mode. No configuration needed.
-
-### Import directly from a CDN
-
-Use full URLs from any ESM-compatible CDN like [esm.sh](https://esm.sh), [skypack](https://www.skypack.dev), or [jsdelivr](https://www.jsdelivr.com):
-
-```js
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  code: `
-    import confetti from "https://esm.sh/canvas-confetti";
-    confetti({ particleCount: 100, spread: 70 });
-    console.log("Fired!");
-  `
-}, "*");
-```
-
-### Use an import map for bare specifiers
-
-If you prefer writing `import { chunk } from "lodash-es"` instead of full URLs, send a `set-importmap` message **before** executing:
-
-```js
-// Step 1: configure the import map
-sandbox.contentWindow.postMessage({
-  type: "set-importmap",
-  map: {
-    imports: {
-      "lodash-es": "https://esm.sh/lodash-es",
-      "lodash-es/": "https://esm.sh/lodash-es/"
-    }
-  }
-}, "*");
-
-// Step 2: execute code with bare specifiers
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  code: `
-    import { chunk, shuffle } from "lodash-es";
-    console.log(shuffle([1, 2, 3, 4, 5]));
-    console.log(chunk([1, 2, 3, 4, 5, 6], 2));
-  `
-}, "*");
-```
-
-### Top-level `await`
-
-Module mode supports top-level `await`:
-
-```js
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  code: `
-    const resp = await fetch("https://jsonplaceholder.typicode.com/todos/1");
-    const todo = await resp.json();
-    console.log("Fetched:", todo);
-  `
-}, "*");
-```
-
-### Force execution mode
-
-By default the evaluator auto-detects module syntax. You can override this:
-
-```js
-// Force module mode (even without import/export)
-{ type: "execute", code: "...", module: true }
-
-// Force classic mode (even if code has import-like strings)
-{ type: "execute", code: "...", module: false }
-```
-
-## Inbound Messages (Host → Evaluator)
-
-Messages you send to the evaluator iframe via `postMessage`.
-
-### `execute`
-
-Runs the provided JavaScript code string inside the sandbox.
-
-| Field    | Type      | Required | Description                                                          |
-| -------- | --------- | -------- | -------------------------------------------------------------------- |
-| `type`   | `string`  | Yes      | Must be `"execute"`.                                                 |
-| `code`   | `string`  | Yes      | The JavaScript source code to run.                                   |
-| `id`     | `string`  | No       | A custom execution ID. If omitted, a UUID is generated automatically.|
-| `module` | `boolean` | No       | Force module (`true`) or classic (`false`) mode. Auto-detected if omitted. |
-| `done`   | `string`  | No       | `"auto"` (default) — end when code finishes. `"signal"` — end only when the code calls `console.log("[DONE]")`. See [Completion Modes](#completion-modes). |
-
-### `set-importmap`
-
-Configures an [import map](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script/type/importmap) for module execution. Send this **before** running module code.
-
-| Field  | Type     | Required | Description                                                          |
-| ------ | -------- | -------- | -------------------------------------------------------------------- |
-| `type` | `string` | Yes      | Must be `"set-importmap"`.                                           |
-| `map`  | `object` | Yes      | An import map object — either `{ imports: { ... } }` or just `{ "pkg": "url" }`. |
-
-### `ping`
-
-Health check. The evaluator responds with a `pong` message.
-
-| Field  | Type     | Required | Description      |
-| ------ | -------- | -------- | ---------------- |
-| `type` | `string` | Yes      | Must be `"ping"`.|
-
-## Outbound Messages (Evaluator → Host)
-
-Messages posted back to the host page from the evaluator.
-
-### `ready`
-
-Sent once when the evaluator script has loaded and is listening for messages.
-
-| Field       | Type     | Description        |
-| ----------- | -------- | ------------------ |
-| `type`      | `string` | `"ready"`          |
-| `timestamp` | `number` | `Date.now()` value |
-
-### `execution-start`
-
-Emitted immediately before the code begins executing.
-
-| Field         | Type     | Description               |
-| ------------- | -------- | ------------------------- |
-| `type`        | `string` | `"execution-start"`      |
-| `executionId` | `string` | ID for this execution run |
-| `timestamp`   | `number` | `Date.now()` value        |
-
-### `console`
-
-Emitted for every `console.log`, `.warn`, `.error`, `.info`, `.debug`, and `.clear` call made by the executed code.
-
-| Field         | Type     | Description                                                                       |
-| ------------- | -------- | --------------------------------------------------------------------------------- |
-| `type`        | `string` | `"console"`                                                                       |
-| `level`       | `string` | One of `log`, `warn`, `error`, `info`, `debug`, `clear`                           |
-| `args`        | `array`  | Each argument serialized as `{ type, value }` (see [Serialization](#serialization)) |
-| `executionId` | `string` | ID for this execution run                                                         |
-| `timestamp`   | `number` | `Date.now()` value                                                                |
-
-### `execution-result`
-
-The return value of the executed code.
-
-- **Classic mode**: code runs in `new Function()`, so you can use `return` statements.
-- **Module mode**: always `undefined` (modules don't have a return value — use `console.log` instead).
-
-| Field         | Type     | Description                           |
-| ------------- | -------- | ------------------------------------- |
-| `type`        | `string` | `"execution-result"`                 |
-| `executionId` | `string` | ID for this execution run             |
-| `result`      | `object` | `{ type, value }` of the return value |
-| `timestamp`   | `number` | `Date.now()` value                    |
-
-### `execution-error`
-
-Emitted when the code throws an error.
-
-| Field         | Type     | Description                |
-| ------------- | -------- | -------------------------- |
-| `type`        | `string` | `"execution-error"`       |
-| `executionId` | `string` | ID for this execution run  |
-| `error`       | `object` | `{ name, message, stack }` |
-| `timestamp`   | `number` | `Date.now()` value         |
-
-### `execution-end`
-
-Emitted after the code has finished, regardless of success or failure. In `done: "signal"` mode, this is deferred until the code calls `console.log("[DONE]")`.
-
-| Field         | Type     | Description               |
-| ------------- | -------- | ------------------------- |
-| `type`        | `string` | `"execution-end"`        |
-| `executionId` | `string` | ID for this execution run |
-| `timestamp`   | `number` | `Date.now()` value        |
-
-### `runtime-error`
-
-Catches uncaught exceptions and unhandled promise rejections that occur after the initial execution completes (e.g. inside `setTimeout` callbacks or async code).
-
-| Field         | Type     | Description                                                              |
-| ------------- | -------- | ------------------------------------------------------------------------ |
-| `type`        | `string` | `"runtime-error"`                                                       |
-| `executionId` | `string` | ID of the last execution run                                             |
-| `error`       | `object` | `{ name, message, stack }` (stack/name may be absent for global errors)  |
-| `timestamp`   | `number` | `Date.now()` value                                                       |
-
-### `importmap-set`
-
-Confirmation that an import map was applied.
-
-| Field       | Type     | Description        |
-| ----------- | -------- | ------------------ |
-| `type`      | `string` | `"importmap-set"` |
-| `timestamp` | `number` | `Date.now()` value |
-
-### `pong`
-
-Response to a `ping` message.
-
-| Field       | Type     | Description        |
-| ----------- | -------- | ------------------ |
-| `type`      | `string` | `"pong"`           |
-| `timestamp` | `number` | `Date.now()` value |
-
-## Execution Modes
-
-| Mode    | Triggered when                               | How code runs                    | `import` / `export` | `return` value | Top-level `await` |
-| ------- | -------------------------------------------- | -------------------------------- | -------------------- | -------------- | ------------------ |
-| Classic | No module syntax detected, or `module: false` | `new Function(code)()`          | Not supported        | Supported      | Not supported      |
-| Module  | `import`/`export` detected, or `module: true` | `<script type="module">`        | Supported            | Not supported  | Supported          |
-
-## Completion Modes
-
-The `done` field on the `execute` message controls when the evaluator emits `execution-end`.
-
-### `done: "auto"` (default)
-
-Execution ends immediately after the synchronous code finishes. Any async work (fetches, timers, etc.) continues running but `execution-end` will have already been emitted.
-
-```js
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  code: "console.log('instant')"
-}, "*");
-```
-
-### `done: "signal"`
-
-Execution stays open until the code explicitly calls `console.log("[DONE]")`. The `[DONE]` marker is intercepted by the evaluator and **not** forwarded to the host as a console message. This is useful for async code that needs to signal when all work is complete.
-
-```js
-sandbox.contentWindow.postMessage({
-  type: "execute",
-  done: "signal",
-  code: `
-    const resp = await fetch("https://jsonplaceholder.typicode.com/todos/1");
-    const todo = await resp.json();
-    console.log("Fetched:", todo);
-    console.log("[DONE]");
-  `,
-  module: true
-}, "*");
-```
-
-If the code throws a synchronous error or a module fails to load, `execution-end` is emitted immediately regardless of mode — since the code crashed, `[DONE]` would never fire.
-
-## Execution Lifecycle
-
-Every code execution follows this message sequence:
-
-### Auto mode (`done: "auto"` or omitted)
+## Layout
 
 ```
-Host  →  { type: "execute", code: "..." }
-
-Eval  ←  { type: "execution-start" }
-Eval  ←  { type: "console", level: "log", ... }     // 0..N console messages
-Eval  ←  { type: "execution-result" }                // or "execution-error"
-Eval  ←  { type: "execution-end" }
-
-// Later, from async code:
-Eval  ←  { type: "console", ... }                    // async logs
-Eval  ←  { type: "runtime-error", ... }              // uncaught async errors
+packages/js-evaluator/
+  src/index.js          SandboxedEval — attaches the iframe, speaks the protocol
+  src/react.js          useSandboxedEval — exported as "js-evaluator/react"
+  src/sandbox/          the runtime that lives *inside* the iframe (canonical copy)
+  types/                hand-written .d.ts
+docs/
+  index.html            the demo, driven by the package's own class
+  sandbox/              generated copy of src/sandbox — the iframe target
+  vendor/               generated copy of src/index.js, so the demo can import it
+scripts/sync-site.mjs   copies package → docs
 ```
 
-### Signal mode (`done: "signal"`)
+`docs/` is named that way because this repo is on GitHub Pages' **legacy** build,
+which can only serve from `/` or `/docs` on a branch.
 
-```
-Host  →  { type: "execute", code: "...", done: "signal" }
+The package is the source of truth for everything under `docs/sandbox/` and
+`docs/vendor/`. Those are generated, committed copies — the site has no build
+step, so the files have to be sitting there. Edit the originals under
+`packages/js-evaluator/src/`, then:
 
-Eval  ←  { type: "execution-start" }
-Eval  ←  { type: "console", level: "log", ... }     // 0..N console messages
-Eval  ←  { type: "execution-result" }                // return value (sync)
-Eval  ←  { type: "console", ... }                    // async logs continue
-         ...                                          // execution stays open
-         // code calls console.log("[DONE]")
-Eval  ←  { type: "execution-end" }                   // now it ends
+```sh
+npm run sync
 ```
 
-## Serialization
+`npm run check:sync` fails if they have drifted, and runs automatically before
+publish.
 
-All values passed through console methods and return values are serialized into a `{ type, value }` object:
+## Working on it
 
-| `type`        | Description          | `value`                          |
-| ------------- | -------------------- | -------------------------------- |
-| `"string"`    | String primitive     | The string itself                |
-| `"number"`    | Number primitive     | String representation            |
-| `"boolean"`   | Boolean primitive    | `"true"` or `"false"`           |
-| `"undefined"` | `undefined`          | `"undefined"`                    |
-| `"null"`      | `null`               | `"null"`                         |
-| `"object"`    | Object or array      | `JSON.stringify` output (pretty) |
-| `"function"`  | Function             | `function.toString()` output     |
-| `"error"`     | Error instance       | `error.message` (plus `stack`)   |
-
-Objects that can't be JSON-serialized (circular references, etc.) fall back to `String(value)`.
-
-## Security
-
-- The evaluator is designed to run inside an iframe with `sandbox="allow-scripts allow-same-origin"`. The `allow-same-origin` is needed for module script execution.
-- Classic code is executed via `new Function()`, module code via inline `<script type="module">` — both run in the global scope of the iframe, not the host.
-- The evaluator communicates with both `window.parent` (iframe embedding) and `window.opener` (popup windows).
-- **For production use**, always specify a target origin instead of `"*"` in your `postMessage` calls, and validate `event.origin` in your message handlers.
-
-## Files
-
-| File           | Purpose                                                               |
-| -------------- | --------------------------------------------------------------------- |
-| `evaluator.js` | Core evaluator script — intercepts console, listens for postMessage   |
-| `index.html`   | Minimal HTML page that loads `evaluator.js` (embed this in an iframe) |
-| `demo.html`    | Interactive demo host page with a code editor, examples, and output   |
-
-## Full Example
-
-```js
-const iframe = document.createElement("iframe");
-iframe.sandbox = "allow-scripts allow-same-origin";
-iframe.src = "https://your-domain.com/index.html";
-iframe.style.display = "none";
-document.body.appendChild(iframe);
-
-window.addEventListener("message", (event) => {
-  const msg = event.data;
-  if (!msg || typeof msg !== "object") return;
-
-  switch (msg.type) {
-    case "ready":
-      // Configure import map for bare specifiers
-      iframe.contentWindow.postMessage({
-        type: "set-importmap",
-        map: {
-          imports: {
-            "canvas-confetti": "https://esm.sh/canvas-confetti"
-          }
-        }
-      }, "*");
-
-      // Execute module code
-      iframe.contentWindow.postMessage({
-        type: "execute",
-        code: `
-          import confetti from "canvas-confetti";
-          confetti({ particleCount: 200 });
-          console.log("Party time!");
-        `
-      }, "*");
-      break;
-
-    case "console":
-      const text = msg.args.map(a => a.value).join(" ");
-      console.log(`[${msg.level}]`, text);
-      break;
-
-    case "execution-result":
-      console.log("Returned:", msg.result.value);
-      break;
-
-    case "execution-error":
-      console.error("Error:", msg.error.message);
-      break;
-  }
-});
+```sh
+npm install       # workspaces; the package itself has no dependencies
+npm run site      # sync, then serve docs/ locally
 ```
+
+Open the served `/` for the demo. The demo loads `./sandbox/`, so it exercises
+the same runtime the package ships.
+
+## Publishing
+
+```sh
+npm run release   # sync + npm publish -w js-evaluator
+```
+
+The site deploys on its own whenever `docs/` changes on the default branch.
 
 ## License
 

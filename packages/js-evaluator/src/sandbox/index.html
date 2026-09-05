@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>js-evaluator sandbox</title>
+</head>
+<body>
+  <!--
+    This page is the isolation boundary, not a page to visit. Load it in an iframe
+    with sandbox="allow-scripts allow-same-origin" and talk to it over postMessage;
+    the host side of that protocol is the `js-evaluator` npm package.
+
+    Optionally append ?origin=https://your.host so the runtime posts results only
+    back to you instead of to "*".
+  -->
+  <script src="./evaluator.js"></script>
+</body>
+</html>

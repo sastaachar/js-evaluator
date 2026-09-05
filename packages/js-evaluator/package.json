@@ -1,0 +1,68 @@
+{
+  "name": "js-evaluator",
+  "version": "0.1.0",
+  "description": "Run JavaScript inside a sandboxed iframe and stream console output, results and errors back to the host page. Ships a plain class and a React hook.",
+  "type": "module",
+  "license": "ISC",
+  "author": "sastaachar",
+  "homepage": "https://sastaachar.github.io/js-evaluator/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sastaachar/js-evaluator.git",
+    "directory": "packages/js-evaluator"
+  },
+  "bugs": {
+    "url": "https://github.com/sastaachar/js-evaluator/issues"
+  },
+  "keywords": [
+    "sandbox",
+    "iframe",
+    "eval",
+    "evaluator",
+    "postmessage",
+    "code-runner",
+    "playground",
+    "repl",
+    "react",
+    "hook"
+  ],
+  "sideEffects": false,
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./react": {
+      "types": "./types/react.d.ts",
+      "default": "./src/react.js"
+    },
+    "./sandbox/evaluator.js": "./src/sandbox/evaluator.js",
+    "./sandbox/index.html": "./src/sandbox/index.html",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepublishOnly": "node ../../scripts/sync-site.mjs --check"
+  }
+}

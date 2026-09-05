@@ -1,13 +1,18 @@
 {
-  "name": "js-evaluator",
-  "version": "1.0.0",
-  "description": "",
-  "main": "evaluator.js",
+  "name": "js-evaluator-repo",
+  "private": true,
+  "type": "module",
+  "description": "Workspace root. The publishable package lives in packages/js-evaluator; docs/ is the GitHub Pages site and is never published.",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "start": "npx serve .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "sync": "node scripts/sync-site.mjs",
+    "check:sync": "node scripts/sync-site.mjs --check",
+    "site": "npm run sync && npx --yes serve docs",
+    "release": "npm run sync && npm publish -w js-evaluator"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "engines": {
+    "node": ">=18"
+  }
 }

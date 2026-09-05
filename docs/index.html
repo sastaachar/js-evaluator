@@ -169,6 +169,7 @@
     .log-entry.result { color: #7ee787; border-left: 3px solid #238636; }
     .log-entry.system { color: #6e7681; font-style: italic; }
     .log-entry.exec-error { color: #f85149; border-left: 3px solid #da3633; }
+    .log-entry.fetch { color: #d2a8ff; border-left: 3px solid #8957e5; }
 
     .log-entry .timestamp {
       color: #484f58;
@@ -224,10 +225,9 @@ return { status: "done", items: nums.length };</textarea>
     </div>
   </main>
 
-  <iframe id="sandbox" sandbox="allow-scripts allow-same-origin" src="index.html"></iframe>
+  <script type="module">
+    import { SandboxedEval } from "./vendor/js-evaluator.js";
 
-  <script>
-    const sandbox = document.getElementById("sandbox");
     const output = document.getElementById("output");
     const codeEl = document.getElementById("code");
     const statusEl = document.getElementById("status");
@@ -340,6 +340,12 @@ console.log("Client methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(
       });
     }
 
+    function resetOutput() {
+      output.innerHTML = "";
+      entries = 0;
+      entryCount.textContent = "";
+    }
+
     function appendEntry(className, text, timestamp) {
       const div = document.createElement("div");
       div.className = "log-entry " + className;
@@ -358,76 +364,77 @@ console.log("Client methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(
       return args.map(a => a.value).join(" ");
     }
 
-    window.addEventListener("message", function (event) {
-      const msg = event.data;
-      if (!msg || typeof msg !== "object") return;
-
-      switch (msg.type) {
-        case "ready":
-          statusEl.textContent = "Ready";
-          statusEl.classList.add("ready");
-          break;
-
-        case "console":
-          if (msg.level === "clear") {
-            output.innerHTML = "";
-            entries = 0;
-            entryCount.textContent = "";
-          } else {
-            appendEntry(msg.level, formatArgs(msg.args), msg.timestamp);
-          }
-          break;
-
-        case "execution-start":
-          appendEntry("system", "— Execution started —", msg.timestamp);
-          break;
-
-        case "execution-result":
-          if (msg.result && msg.result.type !== "undefined") {
-            appendEntry("result", "↪ " + msg.result.value, msg.timestamp);
-          }
-          break;
-
-        case "execution-error":
-          appendEntry("exec-error", msg.error.name + ": " + msg.error.message, msg.timestamp);
-          break;
-
-        case "execution-end":
-          appendEntry("system", "— Execution finished —", msg.timestamp);
-          break;
-
-        case "runtime-error":
-          appendEntry("exec-error", msg.error.message, msg.timestamp);
-          break;
-
-        case "importmap-set":
-          appendEntry("system", "— Import map configured —", msg.timestamp);
-          break;
-      }
+    // One evaluator for the page. It attaches its own hidden iframe pointing at
+    // ./sandbox/, which is the same runtime the npm package ships.
+    const evaluator = new SandboxedEval({
+      src: "./sandbox/",
+      // Demo policy: let everything through, but log it so you can see the hook.
+      fetch: (req) => {
+        appendEntry("fetch", req.method + " " + req.url, Date.now());
+        return true;
+      },
     });
 
-    function sendImportMapIfNeeded() {
-      for (const [key, map] of Object.entries(IMPORTMAPS)) {
-        if (codeEl.value === EXAMPLES[key]) {
-          sandbox.contentWindow.postMessage({ type: "set-importmap", map }, "*");
-          return;
-        }
+    evaluator.on("start", () => appendEntry("system", "— Execution started —", Date.now()));
+    evaluator.on("console", (entry) => {
+      if (entry.level === "clear") {
+        resetOutput();
+      } else {
+        appendEntry(entry.level, entry.text, entry.timestamp);
       }
-    }
-
-    runBtn.addEventListener("click", function () {
-      sendImportMapIfNeeded();
-      sandbox.contentWindow.postMessage(
-        { type: "execute", code: codeEl.value },
-        "*"
+    });
+    evaluator.on("result", ({ result }) => {
+      if (result && result.type !== "undefined") {
+        appendEntry("result", "↪ " + result.value, Date.now());
+      }
+    });
+    evaluator.on("error", ({ error }) => {
+      appendEntry("exec-error", (error.name || "Error") + ": " + error.message, Date.now());
+    });
+    evaluator.on("runtime-error", ({ error }) => {
+      appendEntry("exec-error", error.message, Date.now());
+    });
+    evaluator.on("end", (run) => {
+      appendEntry(
+        "system",
+        `— Execution finished in ${run.durationMs}ms —` + (run.timedOut ? " (timed out)" : ""),
+        Date.now()
       );
     });
 
-    clearBtn.addEventListener("click", function () {
-      output.innerHTML = "";
-      entries = 0;
-      entryCount.textContent = "";
+    evaluator.init().then(
+      () => {
+        statusEl.textContent = "Ready";
+        statusEl.classList.add("ready");
+      },
+      (err) => {
+        statusEl.textContent = "Failed";
+        appendEntry("exec-error", err.message, Date.now());
+      }
+    );
+
+    function importMapFor(code) {
+      for (const [key, map] of Object.entries(IMPORTMAPS)) {
+        if (code === EXAMPLES[key]) return map;
+      }
+      return undefined;
+    }
+
+    runBtn.addEventListener("click", async function () {
+      if (runBtn.disabled) return;
+      runBtn.disabled = true;
+      try {
+        await evaluator.run(codeEl.value, {
+          importMap: importMapFor(codeEl.value),
+        });
+      } catch (err) {
+        appendEntry("exec-error", err.message, Date.now());
+      } finally {
+        runBtn.disabled = false;
+      }
     });
+
+    clearBtn.addEventListener("click", resetOutput);
 
     codeEl.addEventListener("keydown", function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
