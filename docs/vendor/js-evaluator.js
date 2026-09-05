@@ -26,7 +26,7 @@ const EVENTS = [
   "fetch",
   "end",
   "message",
-  "destroy",
+  "cleanup",
 ];
 
 function randomId() {
@@ -38,29 +38,6 @@ function randomId() {
 
 function textOf(args) {
   return args.map((a) => (a && a.value !== undefined ? a.value : "")).join(" ");
-}
-
-/**
- * Applies a fetch policy to an intercepted request.
- * `true`/nullish allows, `false` blocks, an array is a hostname allowlist, and a
- * function decides per request (it may be async).
- * @param {boolean|string[]|((req: any) => boolean|Promise<boolean>)|null|undefined} policy
- * @param {object} request
- * @param {string} [base] Base URL for resolving a relative request URL.
- * @returns {Promise<boolean>}
- */
-export async function resolveFetchPolicy(policy, request, base) {
-  if (policy === undefined || policy === null || policy === true) return true;
-  if (policy === false) return false;
-  if (Array.isArray(policy)) {
-    try {
-      return policy.includes(new URL(request.url, base).hostname);
-    } catch {
-      return false;
-    }
-  }
-  if (typeof policy === "function") return !!(await policy(request));
-  return true;
 }
 
 /** Thrown for lifecycle problems — never for errors *inside* evaluated code. */
@@ -83,13 +60,12 @@ export class SandboxedEval {
   #readyTimer = null;
   #pingTimer = null;
   #isReady = false;
-  #destroyed = false;
   #handlers = new Map();
   #activeRun = null;
   #queue = Promise.resolve();
   #pendingImportMap = null;
   #pendingPongs = [];
-  #importMapApplied = false;
+  #appliedImportMap = null;
 
   /**
    * @param {object} [options]
@@ -138,17 +114,13 @@ export class SandboxedEval {
     return this.#activeRun !== null;
   }
 
-  get destroyed() {
-    return this.#destroyed;
-  }
-
   // ---------------------------------------------------------------------------
   // Events
   // ---------------------------------------------------------------------------
 
   /**
    * Subscribe to an event. Returns an unsubscribe function.
-   * @param {"ready"|"start"|"console"|"result"|"error"|"runtime-error"|"fetch"|"end"|"message"|"destroy"} type
+   * @param {"ready"|"start"|"console"|"result"|"error"|"runtime-error"|"fetch"|"end"|"message"|"cleanup"} type
    * @param {(payload: any) => void} handler
    */
   on(type, handler) {
@@ -185,13 +157,12 @@ export class SandboxedEval {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /** Creates the iframe and resolves once the sandbox has answered the handshake. */
+  /**
+   * Brings the sandbox up, or hands back the one already running. `run()` calls
+   * this itself, so it is only worth calling directly to pay the startup cost
+   * before the user asks for anything.
+   */
   init() {
-    if (this.#destroyed) {
-      return Promise.reject(
-        new EvaluatorError("This SandboxedEval has been destroyed", "DESTROYED")
-      );
-    }
     if (this.#readyPromise) return this.#readyPromise;
 
     if (typeof document === "undefined" || typeof window === "undefined") {
@@ -229,7 +200,7 @@ export class SandboxedEval {
     // `ready` is posted the moment the runtime loads. If we somehow miss it — a
     // bfcache restore, a listener attached a tick late — ping until it answers.
     iframe.addEventListener("load", () => {
-      if (this.#isReady || this.#destroyed) return;
+      if (this.#isReady) return;
       this.#pingTimer = setInterval(() => {
         this.#post({ type: "ping" });
       }, PING_INTERVAL);
@@ -247,25 +218,16 @@ export class SandboxedEval {
     return this.#readyPromise;
   }
 
-  /** Tears down the current sandbox and brings up a fresh one. */
-  async reset() {
-    if (this.#destroyed) {
-      throw new EvaluatorError("This SandboxedEval has been destroyed", "DESTROYED");
-    }
-    this.#teardown(new EvaluatorError("Sandbox was reset", "RESET"));
-    this.#importMapApplied = false;
-    return this.init();
-  }
-
-  /** Removes the iframe and listeners. The instance cannot be reused afterwards. */
-  destroy() {
-    if (this.#destroyed) return;
-    this.#destroyed = true;
-    this.#teardown(
-      new EvaluatorError("SandboxedEval was destroyed", "DESTROYED")
-    );
-    this.#emit("destroy", null);
-    this.#handlers.clear();
+  /**
+   * Removes the iframe and its listeners, and fails any run still in flight.
+   * The instance stays usable: a later `run()` builds a fresh sandbox, which
+   * also makes this the way to throw away state the evaluated code left behind.
+   */
+  cleanup() {
+    if (!this.#iframe && !this.#readyPromise) return;
+    this.#teardown(new EvaluatorError("Sandbox was cleaned up", "CLEANED_UP"));
+    this.#appliedImportMap = null;
+    this.#emit("cleanup", null);
   }
 
   #teardown(reason) {
@@ -326,7 +288,7 @@ export class SandboxedEval {
   }
 
   #markReady() {
-    if (this.#isReady || this.#destroyed) return;
+    if (this.#isReady) return;
     this.#isReady = true;
     clearTimeout(this.#readyTimer);
     clearInterval(this.#pingTimer);
@@ -386,14 +348,17 @@ export class SandboxedEval {
   }
 
   async #runNow(code, opts) {
-    if (this.#destroyed) {
-      throw new EvaluatorError("This SandboxedEval has been destroyed", "DESTROYED");
-    }
     await this.init();
 
     const importMap = opts.importMap ?? this.#options.importMap;
-    if (importMap && !this.#importMapApplied) {
-      await this.setImportMap(importMap);
+    if (importMap) {
+      const wanted = JSON.stringify(importMap);
+      if (wanted !== this.#appliedImportMap) {
+        // A document cannot swap an import map once modules have resolved
+        // against it, so a *different* map only takes effect in a new frame.
+        if (this.#appliedImportMap !== null) this.cleanup();
+        await this.setImportMap(importMap);
+      }
     }
 
     const id = opts.id || randomId();
@@ -451,7 +416,7 @@ export class SandboxedEval {
           this.#pendingImportMap = {
             resolve: () => {
               clearTimeout(timer);
-              this.#importMapApplied = true;
+              this.#appliedImportMap = JSON.stringify(map);
               resolve();
             },
             reject: (err) => {
@@ -611,9 +576,20 @@ export class SandboxedEval {
     this.#post({ type: "fetch-response", requestId: msg.requestId, allow });
   }
 
-  #decideFetch(request) {
-    const base = this.#targetOrigin === "*" ? undefined : this.#targetOrigin;
-    return resolveFetchPolicy(this.#options.fetch, request, base);
+  async #decideFetch(request) {
+    const policy = this.#options.fetch;
+    if (policy === undefined || policy === null || policy === true) return true;
+    if (policy === false) return false;
+    if (Array.isArray(policy)) {
+      try {
+        const base = this.#targetOrigin === "*" ? undefined : this.#targetOrigin;
+        return policy.includes(new URL(request.url, base).hostname);
+      } catch {
+        return false;
+      }
+    }
+    if (typeof policy === "function") return !!(await policy(request));
+    return true;
   }
 }
 

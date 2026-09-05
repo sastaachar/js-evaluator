@@ -368,7 +368,7 @@ console.log("Client methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(
     // ./sandbox/, which is the same runtime the npm package ships.
     const evaluator = new SandboxedEval({
       src: "./sandbox/",
-      // Demo policy: let everything through, but log it so you can see the hook.
+      // Demo policy: allow everything, but log it so the interception is visible.
       fetch: (req) => {
         appendEntry("fetch", req.method + " " + req.url, Date.now());
         return true;

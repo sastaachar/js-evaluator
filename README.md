@@ -7,7 +7,7 @@ This repo holds two things that ship to different places:
 
 | Path                    | What it is                                | Where it goes                                        |
 | ----------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| `packages/js-evaluator/` | The npm package — a class and a React hook | [npm](https://www.npmjs.com/package/js-evaluator)     |
+| `packages/js-evaluator/` | The npm package — the host-side class      | [npm](https://www.npmjs.com/package/js-evaluator)     |
 | `docs/`                 | The demo site and the sandbox page it loads | [GitHub Pages](https://sastaachar.github.io/js-evaluator/) |
 
 Only the package is published to npm. The site is never packaged.
@@ -17,7 +17,6 @@ Only the package is published to npm. The site is never packaged.
 ```
 packages/js-evaluator/
   src/index.js          SandboxedEval — attaches the iframe, speaks the protocol
-  src/react.js          useSandboxedEval — exported as "js-evaluator/react"
   src/sandbox/          the runtime that lives *inside* the iframe (canonical copy)
   types/                hand-written .d.ts
 docs/

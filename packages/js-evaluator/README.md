@@ -4,8 +4,7 @@ Run JavaScript inside a sandboxed iframe and stream the console output, return
 value and errors back to your page.
 
 The evaluated code lives in a cross-origin iframe, so it cannot touch your DOM,
-your globals or your cookies. You get a plain class, and a React hook that wraps
-it — both drive the same runtime over `postMessage`.
+your globals or your cookies. One class drives it over `postMessage`.
 
 - **ES modules work.** `import` from any ESM CDN, or configure an import map for
   bare specifiers. Top-level `await` included.
@@ -21,7 +20,7 @@ it — both drive the same runtime over `postMessage`.
 npm install js-evaluator
 ```
 
-React is an optional peer dependency — you only need it for `js-evaluator/react`.
+No dependencies, no peers, no build step.
 
 ## Quick start
 
@@ -57,43 +56,42 @@ bad.ok;     // false
 bad.error;  // { name: "TypeError", message: "boom", stack: "..." }
 ```
 
-Only lifecycle problems reject: the sandbox never loading, a destroyed instance,
-a bad argument.
+Only lifecycle problems reject: the sandbox never loading, a bad argument.
 
-## React
+## One instance, many runs
 
-```jsx
-import { useSandboxedEval } from "js-evaluator/react";
+An instance owns one iframe and is meant to be reused. `run()` brings the
+sandbox up on first call and reuses it on every call after, so there is nothing
+to set up and nothing to await beforehand:
 
-function Playground() {
-  const [code, setCode] = useState("console.log('hi')");
-  const { ready, running, logs, result, error, run, clear } = useSandboxedEval();
+```js
+const evaluator = new SandboxedEval();
 
-  return (
-    <>
-      <textarea value={code} onChange={(e) => setCode(e.target.value)} />
-      <button onClick={() => run(code)} disabled={!ready || running}>
-        {running ? "Running…" : "Run"}
-      </button>
-      <button onClick={clear}>Clear</button>
-
-      <pre>
-        {logs.map((log, i) => (
-          <div key={i} data-level={log.level}>{log.text}</div>
-        ))}
-      </pre>
-
-      {error && <p role="alert">{error.name}: {error.message}</p>}
-      {result && <p>↪ {result.value}</p>}
-    </>
-  );
-}
+await evaluator.run("globalThis.x = 1");
+await evaluator.run("console.log(x)");   // same frame, so x is still there
 ```
 
-The iframe is created on mount and destroyed on unmount. It is recreated only
-when `src`, `container` or `enabled` change — every other option is read live, so
-a `fetch` policy that closes over component state stays current without
-remounting the sandbox.
+Runs are serialised — the runtime tracks one execution at a time — so
+overlapping calls queue rather than interleave:
+
+```js
+const [a, b] = await Promise.all([
+  evaluator.run("console.log('first')"),
+  evaluator.run("console.log('second')"),
+]);
+```
+
+`cleanup()` removes the iframe and fails anything in flight. It is not terminal:
+the next `run()` builds a fresh sandbox, which is also how you throw away state
+the evaluated code left behind.
+
+```js
+evaluator.cleanup();
+await evaluator.run("console.log(typeof x)");   // "undefined" — new frame
+```
+
+Call it when you are done — on unmount, on navigation — so the iframe and its
+message listener are not left attached.
 
 ## Where the sandbox page comes from
 
@@ -142,10 +140,9 @@ worth having. A subdomain (`sandbox.example.com`) is the usual answer.
 | `run(code, options?)`     | Evaluates `code`. Resolves with a [`RunResult`](#runresult). Runs are serialised. |
 | `setImportMap(map)`       | Installs an import map so modules can use bare specifiers.                      |
 | `ping(timeout?)`          | Round-trips a ping; resolves with the round-trip time in ms.                    |
-| `reset()`                 | Replaces the iframe with a fresh sandbox, discarding everything inside it.      |
-| `destroy()`               | Removes the iframe and listeners. The instance cannot be reused.                |
+| `cleanup()`               | Removes the iframe and listeners, failing any run in flight. Not terminal.      |
 
-Properties: `isReady`, `isRunning`, `destroyed`, `iframe`, `options`.
+Properties: `isReady`, `isRunning`, `iframe`, `options`.
 
 ### `run(code, options)`
 
@@ -190,21 +187,13 @@ while a run is still in flight; `run()` only resolves at the end.
 | `fetch`         | the request, plus `allowed`              |
 | `end`           | the `RunResult`                          |
 | `message`       | every raw message from the sandbox       |
-| `destroy`       | `null`                                   |
+| `cleanup`       | `null`                                   |
 
 ```js
 const off = evaluator.on("console", (log) => console.log(log.level, log.text));
 // …later
 off();
 ```
-
-### `useSandboxedEval(options)`
-
-Takes everything `SandboxedEval` takes, plus `clearOnRun` (default `true`, empties
-`logs` when a run starts) and `enabled` (default `true`, set `false` to hold off
-creating the sandbox).
-
-Returns `{ ready, running, logs, result, error, lastRun, initError, run, clear, reset, evaluator }`.
 
 ## Modules and packages
 
@@ -234,6 +223,10 @@ await evaluator.run(
   }
 );
 ```
+
+Passing a **different** import map to a later run restarts the sandbox, because a
+document cannot swap an import map once modules have resolved against it. Passing
+the same one repeatedly is free.
 
 ### Execution modes
 

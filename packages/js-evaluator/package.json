@@ -1,7 +1,7 @@
 {
   "name": "js-evaluator",
   "version": "0.1.0",
-  "description": "Run JavaScript inside a sandboxed iframe and stream console output, results and errors back to the host page. Ships a plain class and a React hook.",
+  "description": "Run JavaScript inside a sandboxed iframe and stream console output, results and errors back to the host page.",
   "type": "module",
   "license": "ISC",
   "author": "sastaachar",
@@ -22,9 +22,7 @@
     "postmessage",
     "code-runner",
     "playground",
-    "repl",
-    "react",
-    "hook"
+    "repl"
   ],
   "sideEffects": false,
   "main": "./src/index.js",
@@ -33,10 +31,6 @@
     ".": {
       "types": "./types/index.d.ts",
       "default": "./src/index.js"
-    },
-    "./react": {
-      "types": "./types/react.d.ts",
-      "default": "./src/react.js"
     },
     "./sandbox/evaluator.js": "./src/sandbox/evaluator.js",
     "./sandbox/index.html": "./src/sandbox/index.html",
@@ -48,14 +42,6 @@
     "README.md",
     "LICENSE"
   ],
-  "peerDependencies": {
-    "react": ">=17"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "publishConfig": {
     "access": "public"
   },

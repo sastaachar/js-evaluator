@@ -134,7 +134,7 @@ export interface EvaluatorEventMap {
   fetch: FetchRequest & { allowed: boolean };
   end: RunResult;
   message: Record<string, unknown> & { type: string };
-  destroy: null;
+  cleanup: null;
 }
 
 export type EvaluatorEvent = keyof EvaluatorEventMap;
@@ -145,12 +145,6 @@ export declare class EvaluatorError extends Error {
   constructor(message: string, code?: string);
 }
 
-export declare function resolveFetchPolicy(
-  policy: FetchPolicy | null | undefined,
-  request: FetchRequest,
-  base?: string
-): Promise<boolean>;
-
 export declare class SandboxedEval {
   constructor(options?: SandboxedEvalOptions);
 
@@ -158,7 +152,6 @@ export declare class SandboxedEval {
   readonly iframe: HTMLIFrameElement | null;
   readonly isReady: boolean;
   readonly isRunning: boolean;
-  readonly destroyed: boolean;
 
   /** Subscribe to an event. Returns an unsubscribe function. */
   on<K extends EvaluatorEvent>(
@@ -170,12 +163,16 @@ export declare class SandboxedEval {
     handler: (payload: EvaluatorEventMap[K]) => void
   ): void;
 
-  /** Creates the iframe and resolves once the sandbox answers the handshake. */
+  /**
+   * Brings the sandbox up, or hands back the one already running. `run()` does
+   * this itself; call it directly only to pay the startup cost early.
+   */
   init(): Promise<this>;
-  /** Replaces the iframe with a fresh sandbox, discarding any state inside it. */
-  reset(): Promise<this>;
-  /** Removes the iframe and listeners. The instance cannot be reused. */
-  destroy(): void;
+  /**
+   * Removes the iframe and its listeners and fails any in-flight run. The
+   * instance stays usable — a later `run()` builds a fresh sandbox.
+   */
+  cleanup(): void;
 
   /**
    * Evaluates `code` in the sandbox. Resolves with a summary instead of rejecting
