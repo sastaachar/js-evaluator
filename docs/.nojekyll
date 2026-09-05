@@ -1,0 +1,3 @@
+Serve docs/ verbatim. Without this, Pages runs Jekyll over the site, which
+renders its own themed index and can drop directories it treats as Ruby build
+output (vendor/ among them). Nothing here needs templating.
