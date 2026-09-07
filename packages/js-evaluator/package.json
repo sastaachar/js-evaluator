@@ -1,6 +1,6 @@
 {
   "name": "js-evaluator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run JavaScript inside a sandboxed iframe and stream console output, results and errors back to the host page.",
   "type": "module",
   "license": "ISC",
