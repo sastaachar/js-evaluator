@@ -2,7 +2,7 @@
   "name": "js-evaluator-repo",
   "private": true,
   "type": "module",
-  "description": "Workspace root. The publishable package lives in packages/js-evaluator; docs/ is the GitHub Pages site and is never published.",
+  "description": "Workspace root. The publishable package lives in packages/eval-sandbox; docs/ is the GitHub Pages site and is never published.",
   "workspaces": [
     "packages/*"
   ],
@@ -10,7 +10,7 @@
     "sync": "node scripts/sync-site.mjs",
     "check:sync": "node scripts/sync-site.mjs --check",
     "site": "npm run sync && npx --yes serve docs",
-    "release": "npm run sync && npm publish -w js-evaluator"
+    "release": "npm run sync && npm publish -w eval-sandbox"
   },
   "engines": {
     "node": ">=18"

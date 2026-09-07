@@ -1,5 +1,5 @@
 {
-  "name": "js-evaluator",
+  "name": "eval-sandbox",
   "version": "0.1.1",
   "description": "Run JavaScript inside a sandboxed iframe and stream console output, results and errors back to the host page.",
   "type": "module",
@@ -9,7 +9,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sastaachar/js-evaluator.git",
-    "directory": "packages/js-evaluator"
+    "directory": "packages/eval-sandbox"
   },
   "bugs": {
     "url": "https://github.com/sastaachar/js-evaluator/issues"

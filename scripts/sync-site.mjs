@@ -13,7 +13,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const pkg = join(root, "packages", "js-evaluator");
+const pkg = join(root, "packages", "eval-sandbox");
 const docs = join(root, "docs");
 
 const BANNER = {
@@ -36,7 +36,7 @@ const COPIES = [
   },
   {
     from: join(pkg, "src", "index.js"),
-    to: join(docs, "vendor", "js-evaluator.js"),
+    to: join(docs, "vendor", "eval-sandbox.js"),
     banner: BANNER.js,
   },
 ];

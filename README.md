@@ -7,7 +7,7 @@ This repo holds two things that ship to different places:
 
 | Path                    | What it is                                | Where it goes                                        |
 | ----------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| `packages/js-evaluator/` | The npm package — the host-side class      | [npm](https://www.npmjs.com/package/js-evaluator)     |
+| `packages/eval-sandbox/` | The npm package — the host-side class      | [npm](https://www.npmjs.com/package/eval-sandbox)     |
 | `docs/`                 | The demo site and the sandbox page it loads | [GitHub Pages](https://sastaachar.github.io/js-evaluator/) |
 
 Only the package is published to npm. The site is never packaged.
@@ -15,7 +15,7 @@ Only the package is published to npm. The site is never packaged.
 ## Layout
 
 ```
-packages/js-evaluator/
+packages/eval-sandbox/
   src/index.js          SandboxedEval — attaches the iframe, speaks the protocol
   src/sandbox/          the runtime that lives *inside* the iframe (canonical copy)
   types/                hand-written .d.ts
@@ -32,7 +32,7 @@ which can only serve from `/` or `/docs` on a branch.
 The package is the source of truth for everything under `docs/sandbox/` and
 `docs/vendor/`. Those are generated, committed copies — the site has no build
 step, so the files have to be sitting there. Edit the originals under
-`packages/js-evaluator/src/`, then:
+`packages/eval-sandbox/src/`, then:
 
 ```sh
 npm run sync
@@ -54,7 +54,7 @@ the same runtime the package ships.
 ## Publishing
 
 ```sh
-npm run release   # sync + npm publish -w js-evaluator
+npm run release   # sync + npm publish -w eval-sandbox
 ```
 
 The site deploys on its own whenever `docs/` changes on the default branch.

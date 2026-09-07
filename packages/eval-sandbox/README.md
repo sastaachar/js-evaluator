@@ -1,4 +1,4 @@
-# js-evaluator
+# eval-sandbox
 
 Run JavaScript inside a sandboxed iframe and stream the console output, return
 value and errors back to your page.
@@ -17,7 +17,7 @@ your globals or your cookies. One class drives it over `postMessage`.
 ## Install
 
 ```sh
-npm install js-evaluator
+npm install eval-sandbox
 ```
 
 No dependencies, no peers, no build step.
@@ -25,7 +25,7 @@ No dependencies, no peers, no build step.
 ## Quick start
 
 ```js
-import { createEvaluator } from "js-evaluator";
+import { createEvaluator } from "eval-sandbox";
 
 const evaluator = await createEvaluator();
 
@@ -105,7 +105,7 @@ To host it yourself, copy the two files the package ships into whatever your app
 serves as static assets:
 
 ```sh
-cp node_modules/js-evaluator/src/sandbox/* public/sandbox/
+cp node_modules/eval-sandbox/src/sandbox/* public/sandbox/
 ```
 
 ```js
